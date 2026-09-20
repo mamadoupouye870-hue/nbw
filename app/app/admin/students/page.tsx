@@ -105,7 +105,7 @@ export default function StudentsPage() {
       }
 
       if (search.trim()) {
-        query = query.ilike("student_number", `%${search.trim()}%`);
+        query = query.or(`student_number.ilike.%${search.trim()}%,last_name.ilike.%${search.trim()}%,first_name.ilike.%${search.trim()}%`);
       }
 
       query = query.order(sortField, { ascending: sortOrder === "asc" });
@@ -215,7 +215,7 @@ export default function StudentsPage() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Rechercher par matricule..."
+              placeholder="Rechercher par matricule ou nom..."
               value={search}
               onChange={(e) => handleSearch(e.target.value)}
               className="pl-9"
@@ -269,7 +269,7 @@ export default function StudentsPage() {
                         <ArrowUpDown className="w-3 h-3" />
                       </button>
                     </TableHead>
-                    <TableHead>Profil</TableHead>
+                    <TableHead>Nom</TableHead>
                     <TableHead>
                       <button
                         className="flex items-center gap-1 hover:text-foreground"
@@ -292,7 +292,7 @@ export default function StudentsPage() {
                     >
                       <TableCell className="font-medium">{s.student_number}</TableCell>
                       <TableCell className="text-muted-foreground">
-                        {s.profile_id ? "Profil lié" : "—"}
+                        {s.last_name || s.first_name ? `${s.last_name ?? ""} ${s.first_name ?? ""}`.trim() : "—"}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {new Date(s.admission_date).toLocaleDateString("fr-FR")}

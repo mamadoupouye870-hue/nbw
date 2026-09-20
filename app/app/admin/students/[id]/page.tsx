@@ -12,6 +12,7 @@ import { StudentFormDialog } from "@/components/students/student-form-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
@@ -43,6 +44,14 @@ import {
   History,
   Banknote,
   RotateCcw,
+  Mail,
+  Phone,
+  MapPin,
+  Globe,
+  Heart,
+  ShieldAlert,
+  Cake,
+  Users,
 } from "lucide-react";
 
 type Student = Database["public"]["Tables"]["students"]["Row"];
@@ -52,6 +61,7 @@ type Enrollment = Database["public"]["Tables"]["enrollments"]["Row"];
 type PaymentPlan = Database["public"]["Tables"]["payment_plans"]["Row"];
 type Installment = Database["public"]["Tables"]["installments"]["Row"];
 type Payment = Database["public"]["Tables"]["payments"]["Row"];
+type Document = Database["public"]["Tables"]["documents"]["Row"];
 
 type EnrollmentWithRelations = Enrollment & {
   courses?: { name: string };
@@ -64,12 +74,22 @@ type PlanWithRelations = PaymentPlan & {
   academic_years?: { name: string };
 };
 
+const CIVILITY_LABELS: Record<string, string> = { M: "M.", Mme: "Mme", Mlle: "Mlle" };
+const GENDER_LABELS: Record<string, string> = { M: "Masculin", F: "Féminin" };
+const MARITAL_LABELS: Record<string, string> = {
+  celibataire: "Célibataire",
+  marie: "Marié(e)",
+  divorce: "Divorcé(e)",
+  veuf: "Veuf/Veuve",
+};
+
 export default function StudentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { permissions } = useAuth();
   const [student, setStudent] = useState<Student | null>(null);
   const [profileData, setProfileData] = useState<Profile | null>(null);
+  const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -151,6 +171,22 @@ export default function StudentDetailPage() {
     }
   }, [id]);
 
+  const fetchDocuments = useCallback(async () => {
+    if (!id) return;
+    try {
+      const { data } = await supabase
+        .from("document_students")
+        .select("document_id, documents(*)")
+        .eq("student_id", id);
+      const docs = (data ?? [])
+        .map((item: unknown) => (item as { documents: Document }).documents)
+        .filter(Boolean) as Document[];
+      setDocuments(docs);
+    } catch {
+      setDocuments([]);
+    }
+  }, [id]);
+
   useEffect(() => {
     fetchStudent();
   }, [fetchStudent]);
@@ -198,7 +234,8 @@ export default function StudentDetailPage() {
     fetchAuditLogs();
     fetchEnrollments();
     fetchPaymentPlans();
-  }, [fetchAuditLogs, fetchEnrollments, fetchPaymentPlans]);
+    fetchDocuments();
+  }, [fetchAuditLogs, fetchEnrollments, fetchPaymentPlans, fetchDocuments]);
 
   const handleStatusChange = async (newStatus: string) => {
     if (!student) return;
@@ -242,9 +279,24 @@ export default function StudentDetailPage() {
     );
   }
 
-  const displayName = profileData
-    ? `${profileData.last_name} ${profileData.first_name}`.trim()
+  const displayName = student.last_name || student.first_name
+    ? `${student.last_name ?? ""} ${student.first_name ?? ""}`.trim()
     : student.student_number;
+
+  const initials = displayName
+    .split(" ")
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
+  const avatarUrl = profileData?.avatar_url ?? null;
+
+  const fullNameForDisplay = [
+    student.civility ? CIVILITY_LABELS[student.civility] : null,
+    student.last_name,
+    student.first_name,
+  ].filter(Boolean).join(" ");
 
   return (
     <div>
@@ -266,22 +318,36 @@ export default function StudentDetailPage() {
         }
       />
 
-      <div className="flex items-center gap-3 mb-6">
-        <StudentStatusBadge status={student.status} />
-        {canUpdate && (
-          <Select value={student.status} onValueChange={handleStatusChange}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {STUDENT_STATUS_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-6">
+        <Avatar className="w-16 h-16">
+          <AvatarImage src={avatarUrl ?? undefined} alt={displayName} />
+          <AvatarFallback className="bg-primary text-white text-lg">
+            {initials || "?"}
+          </AvatarFallback>
+        </Avatar>
+        <div className="flex items-center gap-3 flex-wrap">
+          <StudentStatusBadge status={student.status} />
+          {canUpdate && (
+            <Select value={student.status} onValueChange={handleStatusChange}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STUDENT_STATUS_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {student.email && (
+            <Badge variant="outline" className="gap-1">
+              <Mail className="w-3 h-3" />
+              {student.email}
+            </Badge>
+          )}
+        </div>
       </div>
 
       <Tabs defaultValue="identity">
@@ -289,6 +355,14 @@ export default function StudentDetailPage() {
           <TabsTrigger value="identity">
             <User className="w-4 h-4 mr-2" />
             Identité
+          </TabsTrigger>
+          <TabsTrigger value="contact">
+            <Phone className="w-4 h-4 mr-2" />
+            Coordonnées
+          </TabsTrigger>
+          <TabsTrigger value="complementary">
+            <Globe className="w-4 h-4 mr-2" />
+            Info complémentaires
           </TabsTrigger>
           <TabsTrigger value="academics">
             <BookOpen className="w-4 h-4 mr-2" />
@@ -316,28 +390,62 @@ export default function StudentDetailPage() {
           </TabsTrigger>
         </TabsList>
 
+        {/* Onglet Identité */}
         <TabsContent value="identity">
           <Card className="p-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <h3 className="text-sm font-semibold text-foreground mb-4">Identité</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               <InfoRow icon={Hash} label="Matricule" value={student.student_number} />
+              <InfoRow icon={User} label="Civilité" value={student.civility ? CIVILITY_LABELS[student.civility] ?? student.civility : "—"} />
+              <InfoRow icon={User} label="Nom complet" value={fullNameForDisplay || "—"} />
+              <InfoRow icon={User} label="Nom" value={student.last_name ?? "—"} />
+              <InfoRow icon={User} label="Prénom(s)" value={student.first_name ?? "—"} />
               <InfoRow icon={Calendar} label="Date d'admission" value={new Date(student.admission_date).toLocaleDateString("fr-FR")} />
-              {profileData && (
-                <>
-                  <InfoRow icon={User} label="Nom" value={profileData.last_name} />
-                  <InfoRow icon={User} label="Prénom" value={profileData.first_name} />
-                  <InfoRow icon={User} label="Téléphone" value={profileData.phone ?? "—"} />
-                </>
-              )}
-              <InfoRow icon={Calendar} label="Créé le" value={new Date(student.created_at).toLocaleDateString("fr-FR")} />
+              <InfoRow icon={Cake} label="Date de naissance" value={student.birth_date ? new Date(student.birth_date).toLocaleDateString("fr-FR") : "—"} />
+              <InfoRow icon={MapPin} label="Lieu de naissance" value={student.birth_place ?? "—"} />
+              <InfoRow icon={Users} label="Sexe" value={student.gender ? GENDER_LABELS[student.gender] ?? student.gender : "—"} />
             </div>
-            {!profileData && (
-              <p className="text-sm text-muted-foreground mt-4">
-                Aucun profil utilisateur lié. L'étudiant n'a pas encore de compte de connexion.
+          </Card>
+        </TabsContent>
+
+        {/* Onglet Coordonnées */}
+        <TabsContent value="contact">
+          <Card className="p-6">
+            <h3 className="text-sm font-semibold text-foreground mb-4">Coordonnées</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <InfoRow icon={Mail} label="Email" value={student.email ?? "—"} />
+              <InfoRow icon={Phone} label="Téléphone (profil)" value={profileData?.phone ?? "—"} />
+              <InfoRow icon={MapPin} label="Adresse" value={student.address ?? "—"} />
+            </div>
+            {profileData && (
+              <p className="text-xs text-muted-foreground mt-4">
+                Le téléphone provient du profil utilisateur lié ({profileData.first_name} {profileData.last_name}).
               </p>
             )}
           </Card>
         </TabsContent>
 
+        {/* Onglet Informations complémentaires */}
+        <TabsContent value="complementary">
+          <Card className="p-6">
+            <h3 className="text-sm font-semibold text-foreground mb-4">Informations complémentaires</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <InfoRow icon={Globe} label="Nationalité" value={student.nationality ?? "—"} />
+              <InfoRow icon={Heart} label="Situation matrimoniale" value={student.marital_status ? MARITAL_LABELS[student.marital_status] ?? student.marital_status : "—"} />
+            </div>
+
+            <div className="border-t mt-6 pt-6">
+              <h4 className="text-sm font-semibold text-foreground mb-4">Contact d'urgence</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                <InfoRow icon={User} label="Nom du contact" value={student.emergency_contact_name ?? "—"} />
+                <InfoRow icon={Users} label="Lien avec l'étudiant" value={student.emergency_contact_relation ?? "—"} />
+                <InfoRow icon={Phone} label="Téléphone" value={student.emergency_contact_phone ?? "—"} />
+              </div>
+            </div>
+          </Card>
+        </TabsContent>
+
+        {/* Onglet Scolarité */}
         <TabsContent value="academics">
           <Card className="p-6">
             {enrollments.length === 0 ? (
@@ -377,6 +485,7 @@ export default function StudentDetailPage() {
           </Card>
         </TabsContent>
 
+        {/* Onglet Présences */}
         <TabsContent value="attendance">
           <Card className="p-6">
             <div className="flex flex-col items-center gap-3">
@@ -388,6 +497,7 @@ export default function StudentDetailPage() {
           </Card>
         </TabsContent>
 
+        {/* Onglet Notes */}
         <TabsContent value="grades">
           <Card className="p-6">
             <div className="flex flex-col items-center gap-3">
@@ -404,6 +514,7 @@ export default function StudentDetailPage() {
           </Card>
         </TabsContent>
 
+        {/* Onglet Paiements */}
         <TabsContent value="payments">
           <div className="space-y-4">
             {paymentPlans.length === 0 ? (
@@ -524,15 +635,36 @@ export default function StudentDetailPage() {
           </div>
         </TabsContent>
 
+        {/* Onglet Documents */}
         <TabsContent value="documents">
           <Card className="p-6">
-            <EmptyState
-              title="Module à venir"
-              message="La gestion des documents sera disponible dans un prochain module."
-            />
+            {documents.length === 0 ? (
+              <EmptyState title="Aucun document" message="Aucun document n'est associé à cet étudiant." />
+            ) : (
+              <div className="space-y-2">
+                {documents.map((doc) => (
+                  <div key={doc.id} className="flex items-center justify-between p-3 rounded-lg border">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                        <FileText className="w-4 h-4 text-primary" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">{doc.name}</p>
+                        <p className="text-xs text-muted-foreground">{doc.category}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {doc.is_confidential && <Badge variant="outline">Confidentiel</Badge>}
+                      <span className="text-xs text-muted-foreground">{new Date(doc.created_at).toLocaleDateString("fr-FR")}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
         </TabsContent>
 
+        {/* Onglet Historique */}
         <TabsContent value="history">
           <Card className="p-6">
             {auditLogs.length === 0 ? (
